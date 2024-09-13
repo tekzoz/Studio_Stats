@@ -1,8 +1,9 @@
 import React from 'react';
-import { ArrowLeft, Calendar, Clock, TrendingUpDown } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Gauge } from 'lucide-react';
 import { getLatestMonthData, getPreviousMonthData, getAnnualAverageData } from './data';
+import PerformanceGauge from './PerformanceGauge';
 
-const StatCard = ({ icon, label, value, comparison, backgroundColor, maxMin }) => (
+const StatCard = ({ icon, label, value, comparison, backgroundColor, component }) => (
   <div style={{
     backgroundColor: backgroundColor,
     borderRadius: '12px',
@@ -16,15 +17,8 @@ const StatCard = ({ icon, label, value, comparison, backgroundColor, maxMin }) =
       {React.cloneElement(icon, { size: 24, color: '#4B5563' })}
       <span style={{ marginLeft: '12px', fontSize: '18px', fontWeight: '500', color: '#4B5563' }}>{label}</span>
     </div>
-    {maxMin ? (
-      <div>
-        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1F2937', marginBottom: '8px' }}>
-          Max: {maxMin.max.valore} (giorno {maxMin.max.giorno})
-        </div>
-        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1F2937', marginBottom: '8px' }}>
-          Min: {maxMin.min.valore} (giorno {maxMin.min.giorno})
-        </div>
-      </div>
+    {component ? (
+      component
     ) : (
       <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#1F2937', marginBottom: '8px' }}>{value}</div>
     )}
@@ -94,19 +88,10 @@ const LastMonthView = ({ setView }) => {
       backgroundColor: '#FFF0E6'
     },
     { 
-      icon: <TrendingUpDown />, 
-      label: 'Massimo e Minimo Turni di Doppiaggio', 
-      maxMin: {
-        max: {
-          valore: latestMonthData.massimoTurni.shifts,
-          giorno: latestMonthData.massimoTurni.day
-        },
-        min: {
-          valore: latestMonthData.minimoTurni.shifts,
-          giorno: latestMonthData.minimoTurni.day
-        }
-      },
-      backgroundColor: '#E6FFE6'
+      icon: <Gauge />, 
+      label: 'Utilizzo delle Sale', 
+      component: <PerformanceGauge value={latestMonthData.mediaGiornaliera} />,
+      backgroundColor: '#F0E6FF'
     },
   ];
 
