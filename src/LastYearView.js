@@ -1,11 +1,92 @@
 import React from 'react';
-import { ArrowLeft, Calendar, TrendingUp, TrendingDown, Activity, List } from 'lucide-react';
+import { ArrowLeft, Calendar, TrendingUp, TrendingDown, Activity, List, Clock } from 'lucide-react';
 import { getYearlyData } from './data';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from 'recharts';
 
 const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 
-const StatCard = ({ icon, label, value, comparison, backgroundColor }) => (
+const processYearlyData = (data) => {
+  if (!data || Object.keys(data).length === 0) return null;
+  
+  const months = Object.keys(data);
+  const lastAvailableMonth = Math.max(...months.map(Number));
+  
+  const totalTurni = months
+    .filter(month => Number(month) <= lastAvailableMonth)
+    .reduce((sum, month) => sum + (data[month]?.totaleTurni || 0), 0);
+  
+  const avgTurni = totalTurni / (lastAvailableMonth + 1);
+  const avgDailyTurni = totalTurni / ((lastAvailableMonth + 1) * 22); // Assuming 22 working days per month
+
+  const [monthWithMostTurni, monthWithLeastTurni] = months
+    .filter(month => Number(month) <= lastAvailableMonth)
+    .reduce(([max, min], month) => {
+      const turni = data[month]?.totaleTurni || 0;
+      return [
+        turni > (data[max]?.totaleTurni || 0) ? month : max,
+        (turni < (data[min]?.totaleTurni || 0) && turni > 0) ? month : min
+      ];
+    }, [months[0], months[0]]);
+
+  return {
+    totalTurni,
+    avgTurni,
+    avgDailyTurni,
+    lastAvailableMonth,
+    monthWithMostTurni: {
+      month: parseInt(monthWithMostTurni) + 1,
+      value: data[monthWithMostTurni]?.totaleTurni || 0
+    },
+    monthWithLeastTurni: {
+      month: parseInt(monthWithLeastTurni) + 1,
+      value: data[monthWithLeastTurni]?.totaleTurni || 0
+    },
+    data
+  };
+};
+
+const calculateComparisons = (currentYear, currentData, previousYears, type) => {
+  const comparisons = [];
+  const currentValue = type === 'total' ? currentData.totalTurni : 
+                       type === 'average' ? currentData.avgTurni :
+                       currentData.avgDailyTurni;
+  const lastMonth = currentData.lastAvailableMonth;
+
+  for (let i = 1; i <= 3; i++) {
+    const year = currentYear - i;
+    const previousYearData = processYearlyData(getYearlyData(year));
+    if (previousYearData) {
+      const relevantMonths = Object.keys(previousYearData.data)
+        .filter(month => Number(month) <= lastMonth);
+      
+      let previousValue;
+      if (type === 'total') {
+        previousValue = relevantMonths.reduce((sum, month) => sum + (previousYearData.data[month]?.totaleTurni || 0), 0);
+      } else if (type === 'average') {
+        const previousTotal = relevantMonths.reduce((sum, month) => sum + (previousYearData.data[month]?.totaleTurni || 0), 0);
+        previousValue = previousTotal / (lastMonth + 1);
+      } else { // 'daily average'
+        const previousTotal = relevantMonths.reduce((sum, month) => sum + (previousYearData.data[month]?.totaleTurni || 0), 0);
+        previousValue = previousTotal / ((lastMonth + 1) * 22);
+      }
+      
+      const diff = currentValue - previousValue;
+      const percentage = (diff / previousValue) * 100;
+      const comparison = percentage > 0 ? `+${percentage.toFixed(1)}%` : `${percentage.toFixed(1)}%`;
+      
+      comparisons.push({
+        year,
+        comparison,
+        previousValue: previousValue.toFixed(2),
+        period: `Gen-${monthNames[lastMonth]}`
+      });
+    }
+  }
+
+  return comparisons;
+};
+
+const StatCard = ({ icon, label, value, comparisons, backgroundColor }) => (
   <div style={{
     backgroundColor,
     borderRadius: '12px',
@@ -23,24 +104,29 @@ const StatCard = ({ icon, label, value, comparison, backgroundColor }) => (
       <span style={{ marginLeft: '12px', fontSize: '16px', fontWeight: '500', color: '#4B5563' }}>{label}</span>
     </div>
     <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1F2937', marginBottom: '8px' }}>{value}</div>
-    {comparison && (
-      <div style={{ fontSize: '14px' }}>
+    {comparisons && comparisons.map((comp, index) => (
+      <div key={index} style={{ fontSize: '14px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ 
-          color: comparison === 'N/A' ? 'gray' : (parseFloat(comparison) > 0 ? 'green' : 'red'),
+          color: comp.comparison === 'N/A' ? 'gray' : (parseFloat(comp.comparison) > 0 ? 'green' : 'red'),
           fontWeight: 'bold' 
         }}>
-          {comparison} rispetto all'anno precedente
+          {comp.comparison} rispetto all'anno {comp.year} ({comp.period})
+        </span>
+        <span style={{ fontWeight: 'bold' }}>
+          <b>{comp.previousValue}</b>
         </span>
       </div>
-    )}
+    ))}
   </div>
 );
 
-const YearlyChart = ({ data, averageTurni }) => {
-  const chartData = Object.entries(data).map(([month, { totaleTurni }]) => ({
-    name: monthNames[parseInt(month)],
-    turniDoppiaggio: totaleTurni
-  }));
+const YearlyChart = ({ data, averageTurni, lastAvailableMonth }) => {
+  const chartData = Object.entries(data)
+    .filter(([month]) => Number(month) <= lastAvailableMonth)
+    .map(([month, { totaleTurni }]) => ({
+      name: monthNames[parseInt(month)],
+      turniDoppiaggio: totaleTurni
+    }));
 
   return (
     <div style={{
@@ -70,7 +156,7 @@ const YearlyChart = ({ data, averageTurni }) => {
   );
 };
 
-const MonthlyListCard = ({ data }) => (
+const MonthlyListCard = ({ data, lastAvailableMonth }) => (
   <div style={{
     backgroundColor: 'white',
     borderRadius: '12px',
@@ -85,59 +171,23 @@ const MonthlyListCard = ({ data }) => (
       <span style={{ marginLeft: '12px', fontSize: '18px', fontWeight: '500', color: '#4B5563' }}>Lista Mensile dei Turni di Doppiaggio</span>
     </div>
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {Object.entries(data).map(([month, { totaleTurni }]) => (
-        <div key={month} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', borderBottom: '1px solid #E5E7EB', paddingBottom: '8px' }}>
-          <span style={{ color: '#4B5563' }}>{monthNames[parseInt(month)]}</span>
-          <span style={{ fontWeight: 'bold', color: '#1F2937' }}>{totaleTurni}</span>
-        </div>
-      ))}
+      {Object.entries(data)
+        .filter(([month]) => Number(month) <= lastAvailableMonth)
+        .map(([month, { totaleTurni }]) => (
+          <div key={month} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', borderBottom: '1px solid #E5E7EB', paddingBottom: '8px' }}>
+            <span style={{ color: '#4B5563' }}>{monthNames[parseInt(month)]}</span>
+            <span style={{ fontWeight: 'bold', color: '#1F2937' }}>{totaleTurni}</span>
+          </div>
+        ))}
     </div>
   </div>
 );
 
-const calculateComparison = (current, previous) => {
-  if (typeof current !== 'number' || typeof previous !== 'number' || previous === 0) {
-    return 'N/A';
-  }
-  const diff = current - previous;
-  const percentage = (diff / previous) * 100;
-  return percentage > 0 ? `+${percentage.toFixed(1)}%` : `${percentage.toFixed(1)}%`;
-};
-
-const processYearlyData = (data) => {
-  if (!data || Object.keys(data).length === 0) return null;
-  
-  const months = Object.keys(data);
-  const totalTurni = months.reduce((sum, month) => sum + (data[month]?.totaleTurni || 0), 0);
-  
-  const [monthWithMostTurni, monthWithLeastTurni] = months.reduce(([max, min], month) => {
-    const turni = data[month]?.totaleTurni || 0;
-    return [
-      turni > (data[max]?.totaleTurni || 0) ? month : max,
-      (turni < (data[min]?.totaleTurni || 0) && turni > 0) ? month : min
-    ];
-  }, [months[0], months[0]]);
-
-  return {
-    totalTurni,
-    avgTurni: totalTurni / months.length,
-    monthWithMostTurni: {
-      month: parseInt(monthWithMostTurni) + 1,
-      value: data[monthWithMostTurni]?.totaleTurni || 0
-    },
-    monthWithLeastTurni: {
-      month: parseInt(monthWithLeastTurni) + 1,
-      value: data[monthWithLeastTurni]?.totaleTurni || 0
-    }
-  };
-};
-
 const LastYearView = ({ setView, year = new Date().getFullYear() }) => {
   const yearlyData = getYearlyData(year);
-  const lastYearData = processYearlyData(yearlyData);
-  const previousYearData = processYearlyData(getYearlyData(year - 1));
+  const processedData = processYearlyData(yearlyData);
 
-  if (!lastYearData || !previousYearData) {
+  if (!processedData) {
     return (
       <div style={{
         backgroundColor: '#F0F9FF',
@@ -168,33 +218,42 @@ const LastYearView = ({ setView, year = new Date().getFullYear() }) => {
     );
   }
 
+  const totalComparisons = calculateComparisons(year, processedData, [year-1, year-2, year-3], 'total');
+  const avgComparisons = calculateComparisons(year, processedData, [year-1, year-2, year-3], 'average');
+  const dailyAvgComparisons = calculateComparisons(year, processedData, [year-1, year-2, year-3], 'daily');
+
   const stats = [
     { 
       icon: <Calendar />, 
       label: 'Totale Turni di Doppiaggio Annuali', 
-      value: lastYearData.totalTurni,
-      comparison: calculateComparison(lastYearData.totalTurni, previousYearData.totalTurni),
+      value: processedData.totalTurni,
+      comparisons: totalComparisons,
       backgroundColor: '#E6F3FF'
     },
     { 
       icon: <Activity />, 
       label: 'Media Turni di Doppiaggio Mensile', 
-      value: lastYearData.avgTurni.toFixed(1),
-      comparison: calculateComparison(lastYearData.avgTurni, previousYearData.avgTurni),
+      value: processedData.avgTurni.toFixed(1),
+      comparisons: avgComparisons,
       backgroundColor: '#FFF0E6'
+    },
+    { 
+      icon: <Clock />, 
+      label: 'Media Turni di Doppiaggio Giornalieri', 
+      value: processedData.avgDailyTurni.toFixed(1),
+      comparisons: dailyAvgComparisons,
+      backgroundColor: '#F0FFF0'
     },
     { 
       icon: <TrendingUp />, 
       label: 'Mese con Più Turni di Doppiaggio', 
-      value: `${lastYearData.monthWithMostTurni.value} (${monthNames[lastYearData.monthWithMostTurni.month - 1]})`,
-      comparison: calculateComparison(lastYearData.monthWithMostTurni.value, previousYearData.monthWithMostTurni.value),
+      value: `${processedData.monthWithMostTurni.value} (${monthNames[processedData.monthWithMostTurni.month - 1]})`,
       backgroundColor: '#FFF0F0'
     },
     { 
       icon: <TrendingDown />, 
       label: 'Mese con Meno Turni di Doppiaggio', 
-      value: `${lastYearData.monthWithLeastTurni.value} (${monthNames[lastYearData.monthWithLeastTurni.month - 1]})`,
-      comparison: calculateComparison(lastYearData.monthWithLeastTurni.value, previousYearData.monthWithLeastTurni.value),
+      value: `${processedData.monthWithLeastTurni.value} (${monthNames[processedData.monthWithLeastTurni.month - 1]})`,
       backgroundColor: '#F0F0FF'
     },
   ];
@@ -248,15 +307,21 @@ const LastYearView = ({ setView, year = new Date().getFullYear() }) => {
           {year}
         </h2>
         
-        <YearlyChart data={yearlyData} averageTurni={lastYearData.avgTurni} />
+        <YearlyChart 
+          data={processedData.data} 
+          averageTurni={processedData.avgTurni} 
+          lastAvailableMonth={processedData.lastAvailableMonth}
+        />
         
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between' }}>
           {stats.map((stat, index) => (
             <StatCard key={index} {...stat} />
           ))}
         </div>
-
-        <MonthlyListCard data={yearlyData} />
+        <MonthlyListCard 
+          data={processedData.data} 
+          lastAvailableMonth={processedData.lastAvailableMonth}
+        />
       </div>
     </div>
   );
